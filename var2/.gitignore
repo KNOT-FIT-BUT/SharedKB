@@ -1,0 +1,16 @@
+__pycache__
+
+*~
+*.o
+*.old
+
+*.pyc
+
+*.so
+
+HEAD-KB
+KB.all*
+KB-HEAD.*
+
+decipherKB-daemon
+reader
