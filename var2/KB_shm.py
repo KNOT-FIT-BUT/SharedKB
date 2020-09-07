@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Copyright 2014 Brno University of Technology
@@ -152,15 +151,15 @@ KBSharedMemDataAt.restype = c_void_p
 
 KBSharedMemVersion = libKB_shm.KBSharedMemVersion
 KBSharedMemVersion.argtypes = [c_void_p]
-KBSharedMemVersion.restype = c_uint
+KBSharedMemVersion.restype = c_char_p
 
 getVersionFromSrc = libKB_shm.getVersionFromSrc
 getVersionFromSrc.argtypes = [c_char_p]
-getVersionFromSrc.restype = c_int
+getVersionFromSrc.restype = c_char_p
 
 getVersionFromBin = libKB_shm.getVersionFromBin
 getVersionFromBin.argtypes = [c_char_p]
-getVersionFromBin.restype = c_int
+getVersionFromBin.restype = c_char_p
 
 # Příklad použití:
 '''
@@ -235,10 +234,7 @@ class KbShmException(Exception):
 #
 
 class DataTypeSet(OrderedSet):
-#	def __str__(self):
-#		return "+".join(data_supertype for data_supertype in self if not data_supertype.startswith("__"))
-#		return str(self)
-	def __bytes__(self):
+	def __str__(self):
 		return "+".join(data_supertype for data_supertype in self if not data_supertype.startswith("__"))
 
 class KB_shm(object):
@@ -253,6 +249,9 @@ class KB_shm(object):
 		'''
 		Inicializace.
 		'''
+		if isinstance(kb_shm_name, str):
+			kb_shm_name = kb_shm_name.encode()
+		
 		self.KB_shm_p = c_void_p(0)
 		self.KB_shm_fd = c_int(-1)
 		self.KB_shm_name = c_char_p(kb_shm_name)
@@ -276,7 +275,7 @@ class KB_shm(object):
 			^
 			(?:<(?P<TYPE>[^>]+)>)?
 			(?:\{(?P<FLAGS>(?:\w|[ ])*)(?:\[(?P<PREFIX_OF_VALUE>[^\]]+)\])?\})?
-			(?P<NAME>(?:\w|[ ])+)
+			(?P<NAME>(?:\w|[ ])+)?
 			$
 		""")
 	
@@ -336,45 +335,42 @@ class KB_shm(object):
 		assert self._alive
 		
 		self.headLine_Boost = {}
+		self.headType_Boost = {}
 		self.headCol_Boost = {}
-		kb_head_column = self.headAt(1, 1)
-		line = 1
-		while kb_head_column is not None:
-			head_type = kb_head_column.type
-			if head_type is None:
-				raise KbShmException("prepareBoosts: Bad syntax of HEAD-KB!")
-			if head_type not in self.headLine_Boost:
-				self.headLine_Boost[head_type] = {}
-			self.headLine_Boost[head_type] = line
-			self.headType_Boost[line] = head_type
-			print_dbg("%s: %s" % (head_type, line))
-			
-			col = 1
-			col_name = kb_head_column.name
-			self.headCol_Boost[line] = {}
-
-			if not col_name:
-				continue
-			
-			while kb_head_column is not None:
-				if col > 1:
-					col_name = kb_head_column.name
+		
+		for line_number, line_content in self.iterKbHead():
+			column_counter = 0
+			for column_number, column_content in line_content:
+				column_counter = column_number
+				column_name = column_content.name
+				if column_number == 1:
+					head_type = column_content.type
+					if head_type is None:
+						raise KbShmException("prepareBoosts: Bad syntax of HEAD-KB!")
+					self.headLine_Boost[head_type] = line_number
+					self.headType_Boost[line_number] = head_type
+					self.headCol_Boost[line_number] = {}
+					print_dbg("%s: %s" % (head_type, line_number))
+					
+					if not column_name:
+						column_counter = 0
+						if next(line_content, None) is not None:
+							raise KbShmException("prepareBoosts: Bad syntax of HEAD-KB!")
+						break
+				else:
+					if not column_name:
+						raise KbShmException("prepareBoosts: Empty name of column %s at line %s in HEAD-KB!" % (column_number, line_number))
 				
-				self.headCol_Boost[line][col_name] = col
-				print_dbg("%s, %s: %s" % (line, col_name, col))
+				self.headCol_Boost[line_number][column_name] = column_number
+				print_dbg("%s, %s: %s" % (line_number, column_name, column_number))
 				
-				if col_name == "TYPE":
+				if column_name == "TYPE":
 					if self.data_type_col is None:
-						self.data_type_col = col
-					elif self.data_type_col != col:
-						raise KbShmException("prepareBoosts: TYPE column must be at same column for each type of entity in HEAD-KB!")
-				
-				col += 1
-				kb_head_column = self.headAt(line, col)
+						self.data_type_col = column_number
+					elif self.data_type_col != column_number:
+						raise KbShmException("prepareBoosts: Attribute TYPE must be at same column for each type of entity in HEAD-KB!")
 			
-			self.headColCnt_Boost[line] = col - 1
-			line += 1
-			kb_head_column = self.headAt(line, 1)
+			self.headColCnt_Boost[line_number] = column_counter
 		
 		if self.data_type_col is None:
 			raise KbShmException("prepareBoosts: There is no TYPE column in HEAD-KB!")
@@ -383,7 +379,14 @@ class KB_shm(object):
 	
 	def version(self):
 		assert self._alive
-		return c_uint( KBSharedMemVersion( self.KB_shm_p ) ).value
+		
+		result = c_char_p( KBSharedMemVersion( self.KB_shm_p ) ).value
+		if isinstance(result, bytes):
+			result = result.decode()
+		else:
+			raise KbShmException("KBSharedMemVersion: None")
+		
+		return result
 	
 	def headAt(self, line, col):
 		assert self._alive
@@ -402,6 +405,26 @@ class KB_shm(object):
 				else:
 					raise
 		return result
+	
+	def iterKbHeadLine(self, line):
+		column = 1
+		while True:
+			column_content = self.headAt(line, column)
+			if column_content is None:
+				break
+			
+			yield column, column_content
+			column += 1
+	
+	def iterKbHead(self):
+		line = 1
+		while True:
+			column_content = self.headAt(line, 1)
+			if column_content is None:
+				break
+			
+			yield line, self.iterKbHeadLine(line)
+			line += 1
 	
 	def headExist(self, ent_type_set):
 		'''
@@ -594,10 +617,12 @@ class KB_shm(object):
 	
 	def dataAt(self, line, col):
 		assert self._alive
-		res = c_char_p( KBSharedMemDataAt( self.KB_shm_p, line, col ) ).value
-		if isinstance(res, bytes):
-			res = res.decode()
-		return res
+		
+		result = c_char_p( KBSharedMemDataAt( self.KB_shm_p, line, col ) ).value
+		if isinstance(result, bytes):
+			result = result.decode()
+		
+		return result
 	
 	def dataFor(self, line, col_name, col_name_type=None):
 		'''
@@ -641,12 +666,13 @@ class KB_shm(object):
 		
 		kb_path = c_char_p(kb_path.encode())
 		
-		status = c_int(0)
-		status = c_int( getVersionFromSrc(kb_path) )
-		if status.value < 0:
-			raise KbShmException("getVersionFromSrc: %s" % status.value)
+		result = c_char_p( getVersionFromSrc(kb_path) ).value
+		if isinstance(result, bytes):
+			result = result.decode()
 		else:
-			return status.value
+			raise KbShmException("getVersionFromSrc: None")
+		
+		return result
 	
 	@staticmethod
 	def getVersionFromBin(kb_bin_path):
@@ -654,12 +680,13 @@ class KB_shm(object):
 		
 		kb_bin_path = c_char_p(kb_bin_path)
 		
-		status = c_int(0)
-		status = c_int( getVersionFromBin(kb_bin_path) )
-		if status.value < 0:
-			raise KbShmException("getVersionFromBin: %s" % status.value)
+		result = c_char_p( getVersionFromBin(kb_bin_path) ).value
+		if isinstance(result, bytes):
+			result = result.decode()
 		else:
-			return status.value
+			raise KbShmException("getVersionFromBin: None")
+		
+		return result
 #
 
 # konec souboru KB_shm.py

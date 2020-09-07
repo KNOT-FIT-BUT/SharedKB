@@ -48,9 +48,15 @@
  */
 typedef struct {
 	char *str;
-	unsigned length;
+	unsigned length; // jako strlen(str), tedy nezahrnuje ukončovací null byte ('\0')
 	unsigned capacity;
 } String;
+
+/**
+ * Inicializuje String \a string řetězcem \a str.
+ * @return Vrací chybový kód.
+ */
+int StringInit(String *string, const char *str);
 
 /**
  * Inicializuje prázdný String \a string.

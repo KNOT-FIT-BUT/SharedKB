@@ -38,8 +38,6 @@ limitations under the License.
 #include "global.h"
 #include "libKB_shm.h"
 
-#define VERSION_SIZE 20
-
 /*       _\|/_
          (o o)
  +----oOO-{_}-OOo----+
@@ -161,7 +159,7 @@ char * KBSharedMemDataAt(KBSharedMem *kb, unsigned line, TStrLen col)
 
 char * KBSharedMemVersion(KBSharedMem *kb)
 {
-	return kb->version;
+	return KBStringAt(&kb->version, 0);
 }
 
 /*       _\|/_
@@ -318,13 +316,15 @@ int disconnectKB_shm(KBSharedMem *dest, int KB_shm_fd)
 
 char * getVersionFromSrc(char *KB_path)
 {
+	static char version[VERSION_MAXIMUM_LENGTH];
+	
 	char *FILENAME = KB_path;
 	int last_letter = 0;  // Poslední načtené písmeno z fce read_line() pro zjištění konce souboru.
 	FILE *infile = NULL;
 	String str_buf;
 	const char *VERSION_PREFIX = "VERSION=";
-	const size_t VERSION_PREFIX_LEN = strlen(VERSION_PREFIX);
-	char * version = NULL;
+	const size_t VERSION_PREFIX_LENGTH = strlen(VERSION_PREFIX);
+	void *FAIL = NULL;
 	
 	int saved_errno = errno;
 	errno = 0;
@@ -333,21 +333,15 @@ char * getVersionFromSrc(char *KB_path)
 	infile = open_file_to_read(FILENAME);
 	if (infile == NULL) {
 		perror("open");
-		return NULL;
+		return FAIL;
 	}
 	
 	/* Inicializace */
 	StringInitEmpty( &str_buf );
-	version = malloc(sizeof(char) * (VERSION_SIZE + 1));
-	if (version == NULL) {
-		perror("malloc");
-		return NULL;
-	}
 	
 	#define CHECK_M_FREE() \
 	{ \
 		deleteString( &str_buf ); \
-		free(version); \
 		close_file(FILENAME, infile); \
 	}
 	
@@ -356,16 +350,21 @@ char * getVersionFromSrc(char *KB_path)
 	{ \
 		perror( #cond ); \
 		CHECK_M_FREE(); \
-		return NULL; \
+		return FAIL; \
 	}
 	
 	/* Načtení verze */
 	if (last_letter != EOF) {
-		// Zde probíhá alokace, která bude uvolňena při chybě, nebo na konci funkce.
+		// Zde probíhá alokace, která bude uvolněna při chybě, nebo na konci funkce.
 		CHECK( read_line( &str_buf, infile, &last_letter ) );
 		
-		if (strncmp(VERSION_PREFIX, str_buf.str, VERSION_PREFIX_LEN) == 0) {
-			strncpy(version, str_buf.str + VERSION_PREFIX_LEN, VERSION_SIZE);
+		if (str_buf.length - VERSION_PREFIX_LENGTH >= VERSION_MAXIMUM_LENGTH) {
+			ERROR("Warning: Version string will be cropped.");
+		}
+		
+		if (strncmp(VERSION_PREFIX, str_buf.str, VERSION_PREFIX_LENGTH) == 0) {
+			strncpy(version, str_buf.str + VERSION_PREFIX_LENGTH, VERSION_MAXIMUM_LENGTH);
+			version[VERSION_MAXIMUM_LENGTH-1] = '\0';
 			deleteString( &str_buf );
 		}
 	}
@@ -377,7 +376,7 @@ char * getVersionFromSrc(char *KB_path)
 	if ( close_file(FILENAME, infile) == EXIT_FAILURE )
 	{
 		perror("close_file");
-		return NULL;
+		return FAIL;
 	}
 	
 	errno = saved_errno;
@@ -386,16 +385,18 @@ char * getVersionFromSrc(char *KB_path)
 
 char * getVersionFromBin(char *KB_bin_path)
 {
+	static char version[VERSION_MAXIMUM_LENGTH];
+	
 	int KB_bin_fd = -1;
 	KBSharedMem *KB_bin = NULL;
-	char * version = NULL;
+	void *FAIL = NULL;
+	char *buffer = NULL;
 	
 	int saved_errno = errno;
 	errno = 0;
 	
 	#define CHECK_M_FREE() \
 	{ \
-		free(version); \
 		if (KB_bin_fd != -1) \
 		{ \
 			close(KB_bin_fd); \
@@ -407,13 +408,22 @@ char * getVersionFromBin(char *KB_bin_path)
 	{ \
 		perror( #cond ); \
 		CHECK_M_FREE(); \
-		return NULL; \
+		return FAIL; \
 	}
 	
 	/* Připojení binárního souboru */
 	CHECK( (KB_bin_fd = open(KB_bin_path, O_RDONLY)) == -1 );
 	CHECK( (KB_bin = mmapKB_shm(KB_bin_fd)) == NULL );
-	version = KBSharedMemVersion(KB_bin);
+	{
+		buffer = KBSharedMemVersion(KB_bin);
+		
+		if (strlen(buffer) >= VERSION_MAXIMUM_LENGTH) {
+			ERROR("Warning: Version string will be cropped.");
+		}
+		
+		strncpy(version, buffer, VERSION_MAXIMUM_LENGTH);
+		version[VERSION_MAXIMUM_LENGTH-1] = '\0';
+	}
 	CHECK( disconnectKB_shm(KB_bin, KB_bin_fd) );
 	
 	#undef CHECK

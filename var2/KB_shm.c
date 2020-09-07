@@ -295,8 +295,9 @@ int KBSharedMemInit(KBSharedMem *kb)
 		return EXIT_FAILURE;
 	}
 	
+	KBStringInitEmpty(&kb->version);
+	
 	kb->capacity = 0;
-	kb->version = NULL;
 	return EXIT_SUCCESS;
 }
 
@@ -304,8 +305,8 @@ void deleteKBSharedMem(KBSharedMem *kb)
 {
 	deleteKBStringVector(&kb->head);
 	deleteKBStringVector(&kb->data);
+	deleteKBString(&kb->version);
 	kb->capacity = 0;
-	free(kb->version);
 }
 
 size_t KBSharedMemSizeOf(KBSharedMem *kb)
@@ -315,6 +316,7 @@ size_t KBSharedMemSizeOf(KBSharedMem *kb)
 	sizeOf = sizeof(KBSharedMem);
 	sizeOf += KBStringVectorSizeOf(&kb->head);
 	sizeOf += KBStringVectorSizeOf(&kb->data);
+	sizeOf += KBStringSizeOf(&kb->version);
 	
 	return sizeOf;
 }
@@ -361,11 +363,12 @@ int copy_KB_to_shm(KBSharedMem **dest, KBSharedMem *source)
 	/* Kopírování dat */
 	freespace = (*dest);
 	freespace = OFFSET_2_P( freespace, sizeof(KBSharedMem) );
+	KBStringCopyToShm( &(*dest)->version, &source->version, &freespace );
 	KBStringVectorCopyToShm( &(*dest)->head, &source->head, &freespace );
 	KBStringVectorCopyToShm( &(*dest)->data, &source->data, &freespace );
 	
 #ifdef DEBUG
-	printf("version     = %s\n", source->version );
+	printf("version     = %s\n", source->version.str );
 	printf("sizeOfKbShm = %lu\n", sizeOfKbShm );
 	printf("freespace   = %lu\n", (size_t)OFFSET_GIVE( (*dest), freespace) );
 #endif

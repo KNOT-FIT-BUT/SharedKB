@@ -48,8 +48,6 @@ limitations under the License.
 // Struktura sdílené paměti
 #include "KB_shm.h"
 
-#define VERSION_SIZE 20
-
 /*       _\|/_
          (o o)
  +----oOO-{_}-OOo----+
@@ -163,7 +161,7 @@ int init_shm(KBSharedMem **KB_shm, char *KB_path)
 	KBString kb_str_buf;
 	bool version_before = false;
 	const char *VERSION_PREFIX = "VERSION=";
-	const size_t VERSION_PREFIX_LEN = strlen(VERSION_PREFIX);
+	const size_t VERSION_PREFIX_LENGTH = strlen(VERSION_PREFIX);
 	
 	/* Otevření souboru pro čtení */
 	infile = open_file_to_read(FILENAME);
@@ -200,16 +198,14 @@ int init_shm(KBSharedMem **KB_shm, char *KB_path)
 	
 	/* Načtení verze */
 	if (last_letter != EOF) {
-		// Zde probíhá alokace, která bude uvolňena při chybě, nebo na konci funkce.
+		// Zde probíhá alokace, která bude uvolněna při chybě, nebo na konci funkce.
 		CHECK( read_line( &str_buf, infile, &last_letter ) );
 		
-		if (strncmp(VERSION_PREFIX, str_buf.str, VERSION_PREFIX_LEN) == 0) {
-			KB_buf.version = malloc(sizeof(char) * (VERSION_SIZE + 1));
-			if (KB_buf.version == NULL) {
-				perror("malloc");
-				return EXIT_FAILURE;
-			}
-			strncpy(KB_buf.version, str_buf.str + VERSION_PREFIX_LEN, VERSION_SIZE);
+		if (strncmp(VERSION_PREFIX, str_buf.str, VERSION_PREFIX_LENGTH) == 0) {
+			String str_buf_version;
+			CHECK( StringInit(&str_buf_version, str_buf.str + VERSION_PREFIX_LENGTH) );
+			CHECK( KBStringInit( &KB_buf.version, &str_buf_version, '\0' ) );
+			deleteString( &str_buf_version );
 			deleteString( &str_buf );
 			CHECK( read_line( &str_buf, infile, &last_letter ) );
 		}
@@ -220,7 +216,7 @@ int init_shm(KBSharedMem **KB_shm, char *KB_path)
 	/* Načítání hlavičky */
 	while (last_letter != EOF)
 	{
-		// Zde probíhá alokace, která bude uvolňena při chybě, nebo na konci funkce.
+		// Zde probíhá alokace, která bude uvolněna při chybě, nebo na konci funkce.
 		if (version_before) {
 			version_before = false;
 		} else {

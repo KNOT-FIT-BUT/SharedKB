@@ -19,6 +19,27 @@
 #include "global.h"
 #include "ecodes.h"
 
+int StringInit(String *string, const char *str)
+{
+	char *buffer = NULL;
+	
+	StringInitEmpty(string);
+	string->length = strlen(str);
+	string->capacity = string->length + 1; // (+1 pro znak '\0')
+	
+	buffer = malloc(string->capacity * sizeof(char));
+	if (buffer == NULL) return EXIT_FAILURE;
+	
+	strncpy(buffer, str, string->length);
+	buffer[string->length] = '\0'; // Přidání znaku znak konce řetězce.
+	
+	string->str = buffer;
+	
+	return EXIT_SUCCESS;
+}
+
+
+
 void StringInitEmpty(String *string)
 {
 	string->str=NULL;
