@@ -654,9 +654,9 @@ class KB_shm(object):
 		data_type_set = DataTypeSet(data_type)
 		
 		if "__generic__" in self.headLine_Boost and "__generic__" not in data_type_set:
-			data_type_set = ["__generic__"] | data_type_set
+			data_type_set = DataTypeSet(["__generic__"]) | data_type_set
 		if "__stats__" in self.headLine_Boost and "__stats__" not in data_type_set:
-			data_type_set = data_type_set | ["__stats__"]
+			data_type_set = data_type_set | DataTypeSet(["__stats__"])
 		
 		return data_type_set
 	
